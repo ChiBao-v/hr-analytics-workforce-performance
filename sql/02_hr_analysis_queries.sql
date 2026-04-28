@@ -60,12 +60,11 @@ SELECT
     e.Manager_Name,
     ROUND(AVG(mp.Performance_Rating), 2) AS Team_Avg_Performance,
     COUNT(DISTINCT e.Employee_Id) AS Team_Size,
-    COUNT(e.Employee_Id) AS Record_Count
+    COUNT(*) AS Record_Count
 FROM employees e 
 JOIN monthly_performance mp ON e.Employee_Id = mp.Employee_Id 
 WHERE 
-    e.Employee_Id IS NOT NULL
-    AND e.Manager_Id IS NOT NULL
+    e.Manager_Id IS NOT NULL
 GROUP BY e.Manager_Id, e.Manager_Name
 ORDER BY Team_Avg_Performance DESC
 LIMIT 10
@@ -117,9 +116,165 @@ ORDER BY Total_Sales DESC
 LIMIT 5 
 
 -- Compare Top 5 and Bottom 5 Stores
+WITH store_sales AS (
+    SELECT 
+        s.Store_Id,
+        s.Store_Name,
+        s.Store_Type,
+        s.City,
+        SUM(bo.Sales_Actual) AS Total_Sales,
+        SUM(bo.Sales_Target) AS Total_Target,
+        AVG(bo.Customer_Satisfaction) AS Avg_Customer_Satisfaction,
+        AVG(bo.Nps_Score) AS Avg_Nps_Score,
+        AVG(bo.Waste_Percentage) AS Avg_Waste_Percentage,
+        AVG(bo.On_Time_Delivery) AS Avg_On_Time_Delivery,
+        SUM(bo.Sales_Actual) * 100 / SUM(bo.Sales_Target) AS Sale_Achievement
+    FROM stores s 
+    JOIN business_outcomes bo ON s.Store_Id = bo.Store_Id
+    GROUP BY 
+        s.Store_Id,
+        s.Store_Name,
+        s.Store_Type,
+        s.City
+),
 
+top_stores AS(
+    SELECT *, 'Top 5' AS Store_Group
+    FROM store_sales
+    ORDER BY Total_Sales DESC
+    LIMIT 5
+),
 
+bottom_stores AS(
+    SELECT*, 'Bottom 5' AS Store_Group
+    FROM store_sales
+    ORDER BY Total_Sales ASC
+    LIMIT 5
+),
 
+combine AS(
+    SELECT * FROM top_stores
+    UNION ALL
+    SELECT * FROM bottom_stores
+)
 
+SELECT 
+    Store_Group,
+    ROUND(AVG(Total_Sales), 2) AS Avg_Total_Sales,
+    ROUND(AVG(Avg_Customer_Satisfaction), 2) AS Avg_Customer_Satisfaction,
+    ROUND(AVG(Avg_Nps_Score), 2) AS Avg_Nps_Score,
+    ROUND(AVG(Avg_Waste_Percentage), 2) AS Avg_Waste_Percentage,
+    ROUND(AVG(Avg_On_Time_Delivery), 2) AS Avg_On_Time_Delivery,
+    ROUND(AVG(Sale_Achievement), 2) AS Avg_Sale_Achievement
+FROM combine
+GROUP BY Store_Group   
 
+-- 7. Employee Satisfaction by Department
+SELECT 
+    e.Department,
+    ROUND(AVG(mp.Employee_Satisfaction), 2) AS Avg_Employee_Satisfaction,
+    COUNT(DISTINCT e.Employee_Id) AS Employee_Count,
+    COUNT(*) AS Record_Count   
+FROM employees e 
+JOIN monthly_performance mp ON e.Employee_Id = mp.Employee_Id
+GROUP BY e.Department
+ORDER BY Avg_Employee_Satisfaction DESC
 
+-- 8.Productivity Index by Job Role
+SELECT 
+    e.Job_Role,
+    ROUND(AVG(r.Productivity_Index), 2) AS Avg_Productivity_Index,
+    COUNT( DISTINCT e.Employee_Id) AS Employee_Count,
+    COUNT(e.Employee_Id) AS Record_Count   
+FROM employees e 
+JOIN role_kpis r ON e.Employee_Id = r.Employee_Id
+GROUP BY e.Job_Level
+ORDER BY Avg_Productivity_Index DESC
+
+-- 9. Promotion Potential Candidate
+WITH employee_scores AS(
+    SELECT 
+        e.Employee_Id,
+        e.Full_Name,
+        e.Department,
+        e.Job_Role,
+        e.Job_Level,
+        e.Store_Location,
+        ROUND(AVG(mp.Performance_Rating), 3) AS Avg_Performance_Rating,
+        ROUND(AVG(mp.Employee_Satisfaction), 3) AS Avg_Employee_Satisfaction,
+        ROUND(AVG(mp.Engagement_Index), 3) AS Avg_Engagement,
+        ROUND(AVG(mp.Manager_Evaluation), 3) AS Avg_Manager_Evaluation,
+        CASE 
+            WHEN e.Exit_Date IS NOT NULL THEN 1
+            ELSE 0
+        END AS Is_Exited    
+    FROM employees e 
+    JOIN monthly_performance mp ON e.Employee_Id = mp.Employee_Id
+    GROUP BY
+        e.Employee_Id,
+        e.Full_Name,
+        e.Department,
+        e.Job_Role,
+        e.Job_Level,
+        e.Store_Location,
+        e.Exit_Date
+)
+
+SELECT
+    Employee_Id,
+    Full_Name,
+    Department,
+    Job_Role,
+    Job_Level,
+    Store_Location,
+    Avg_Performance_Rating,
+    Avg_Employee_Satisfaction,
+    Avg_Engagement,
+    Avg_Manager_Evaluation,
+    ROUND((
+        0.45 * Avg_Performance_Rating / 5 +
+        0.25 * Avg_Employee_Satisfaction / 10 +
+        0.20 * Avg_Engagement / 10 +
+        0.10 * Avg_Manager_Evaluation / 5
+    )* 100, 2) AS Promotion_Potential_Score
+FROM employee_scores
+WHERE Is_Exited = 0
+ORDER BY 
+    Promotion_Potential_Score DESC,
+    Avg_Performance_Rating DESC,
+    Avg_Employee_Satisfaction DESC
+LIMIT 10
+
+-- 10. Average Performance by Age Group
+WITH employee_performance AS(
+    SELECT
+        e.Employee_Id,
+        e.Age,
+        AVG(mp.Performance_Rating) AS Avg_Performance_Rating
+    FROM employees e 
+    JOIN monthly_performance mp ON e.Employee_Id = mp.Employee_Id
+    GROUP BY
+        e.Employee_Id,
+        e.Age       
+)
+
+SELECT 
+    CASE 
+        WHEN Age BETWEEN 18 AND 25  THEN '18-25'
+        WHEN Age BETWEEN 26 AND 35  THEN '26-35'
+        WHEN Age BETWEEN 36 AND 45  THEN '36-45'
+        WHEN Age BETWEEN 46 AND 55  THEN '46-55'
+        ELSE '56+'
+    END AS Age_Group,
+    ROUND(AVG(Avg_Performance_Rating), 3) AS Avg_Performance_Rating,
+    COUNT(Employee_Id) AS Employee_Count
+FROM employee_performance
+GROUP BY Age_Group
+ORDER BY
+    CASE Age_Group
+        WHEN '18-25' THEN 1
+        WHEN '26-35' THEN 2
+        WHEN '36-45' THEN 3
+        WHEN '46-55' THEN 4 
+        ELSE  5      
+    END    
